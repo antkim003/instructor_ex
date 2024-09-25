@@ -114,8 +114,9 @@ defmodule Instructor do
               valid?: false
           }}
   """
+  # the third argument represents the json output for token usage stats, which is now optional
   @spec chat_completion(Keyword.t(), any()) ::
-          {:ok, Ecto.Schema.t(), map() | nil} # the third argument represents the json output for token usage stats, which is now optional
+          {:ok, Ecto.Schema.t(), map() | nil}
           | {:error, Ecto.Changeset.t()}
           | {:error, String.t()}
           | Stream.t()
