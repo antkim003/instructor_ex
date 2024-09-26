@@ -134,11 +134,12 @@ defmodule Instructor.Adapters.Anthropic do
   defp config(nil), do: config(Application.get_env(:instructor, :anthropic, []))
 
   defp config(base_config) do
+    system_config = Application.get_env(:instructor, :anthropic, [])
     default_config = [
       api_url: "https://api.anthropic.com/",
       http_options: [receive_timeout: 60_000]
     ]
 
-    Keyword.merge(default_config, base_config)
+    default_config ++ base_config ++ system_config
   end
 end
