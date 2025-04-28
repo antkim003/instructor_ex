@@ -18,6 +18,10 @@ defmodule InstructorTest do
       :ollama ->
         Application.put_env(:instructor, :adapter, Instructor.Adapters.Ollama)
 
+      :groq ->
+        Application.put_env(:instructor, :adapter, Instructor.Adapters.Groq)
+        Application.put_env(:instructor, :groq, api_key: System.fetch_env!("GROQ_API_KEY"))
+
       :anthropic ->
         Application.put_env(:instructor, :adapter, Instructor.Adapters.Anthropic)
 
@@ -28,6 +32,10 @@ defmodule InstructorTest do
       :gemini ->
         Application.put_env(:instructor, :adapter, Instructor.Adapters.Gemini)
         Application.put_env(:instructor, :gemini, api_key: System.fetch_env!("GOOGLE_API_KEY"))
+
+      :xai ->
+        Application.put_env(:instructor, :adapter, Instructor.Adapters.XAI)
+        Application.put_env(:instructor, :xai, api_key: System.fetch_env!("XAI_API_KEY"))
 
       :openai ->
         Application.put_env(:instructor, :adapter, Instructor.Adapters.OpenAI)
@@ -51,14 +59,17 @@ defmodule InstructorTest do
   def mock_stream_response(_, _, _), do: nil
 
   for {adapter, params} <- [
-        {:mock_openai, [mode: :tools, model: "gpt-4o-mini"]},
+        {:openai_mock, [mode: :tools, model: "gpt-4o-mini"]},
         {:openai, [mode: :tools, model: "gpt-4o-mini"]},
         {:openai, [mode: :json, model: "gpt-4o-mini"]},
         {:openai, [mode: :json_schema, model: "gpt-4o-mini"]},
-        {:llamacpp, [mode: :json_schema, model: "llama3.1-8b-instruct"]},
-        {:gemini, [mode: :json_schema, model: "gemini-1.5-flash-latest"]},
-        {:ollama, [mode: :tools, model: "llama3.1"]},
-        {:anthropic, [mode: :tools, model: "claude-3-5-sonnet-20240620", max_tokens: 1024]}
+        {:groq, [mode: :tools, model: "llama-3.3-70b-versatile"]},
+        {:gemini, [mode: :json_schema, model: "gemini-2.0-flash"]},
+        {:anthropic, [mode: :tools, model: "claude-3-5-haiku-latest", max_tokens: 1024]},
+        {:xai, [mode: :tools, model: "grok-2-latest"]},
+        {:xai, [mode: :json_schema, model: "grok-2-latest"]},
+        {:ollama, [mode: :tools, model: "qwen2.5:7b"]},
+        {:llamacpp, [mode: :json_schema, model: "qwen2.5:7b"]}
       ] do
     describe "#{inspect(adapter)} #{params[:mode]} #{params[:model]}" do
       @tag adapter: adapter
@@ -83,6 +94,7 @@ defmodule InstructorTest do
 
       defmodule SpamPrediction do
         use Ecto.Schema
+        use Instructor
 
         @primary_key false
         embedded_schema do
@@ -116,7 +128,7 @@ defmodule InstructorTest do
 
       defmodule AllEctoTypes do
         use Ecto.Schema
-
+        use Instructor
         # Be explicit about all fields in this test
         @primary_key false
         embedded_schema do
@@ -237,6 +249,7 @@ defmodule InstructorTest do
 
       defmodule President do
         use Ecto.Schema
+        use Instructor
 
         @primary_key false
         embedded_schema do
@@ -261,7 +274,7 @@ defmodule InstructorTest do
               stream: true,
               response_model: {:array, President},
               messages: [
-                %{role: "user", content: "What are the first 3 presidents of the United States?"}
+                %{role: "user", content: "Who were the first 3 presidents of the United States?"}
               ]
             )
           )
@@ -342,12 +355,70 @@ defmodule InstructorTest do
         assert [ok: %President{}, partial: %President{}] = sixth
         assert [ok: %President{}, ok: %President{}] = seventh
       end
+
+      defmodule ListOfNumbers do
+        use Ecto.Schema
+        use Instructor
+
+        @primary_key false
+        embedded_schema do
+          field(:numbers, {:array, :integer})
+        end
+
+        @impl true
+        def validate_changeset(changeset) do
+          changeset
+          |> Ecto.Changeset.validate_change(:numbers, fn _, numbers ->
+            case numbers do
+              [1337 | _] ->
+                []
+
+              _ ->
+                [numbers: "Make sure the first number is 1337."]
+            end
+          end)
+        end
+      end
+
+      @tag adapter: adapter
+      test "max_retries" do
+        mock_response(unquote(adapter), :tools, %{numbers: [2, 42]})
+
+        result =
+          Instructor.chat_completion(
+            Keyword.merge(unquote(params),
+              max_retries: 0,
+              response_model: ListOfNumbers,
+              messages: [%{role: "user", content: "Give me a couple of numbers"}]
+            )
+          )
+
+        assert {:error, %Ecto.Changeset{}} = result
+
+        mock_response(unquote(adapter), :tools, %{numbers: [1337, 42]})
+
+        result =
+          Instructor.chat_completion(
+            Keyword.merge(unquote(params),
+              max_retries: 3,
+              response_model: ListOfNumbers,
+              messages: [%{role: "user", content: "Give me a couple of numbers"}]
+            )
+          )
+
+        assert {:ok, %ListOfNumbers{numbers: [1337 | _]},
+                %{
+                  "completion_tokens" => 23,
+                  "prompt_tokens" => 136,
+                  "total_tokens" => 159
+                }} = result
+      end
     end
   end
 
   defmodule QuestionAnswer do
     use Ecto.Schema
-    use Instructor.Validator
+    use Instructor
 
     @primary_key false
     embedded_schema do
@@ -377,7 +448,7 @@ defmodule InstructorTest do
 
     result =
       Instructor.chat_completion(
-        model: "gpt-3.5-turbo",
+        model: "gpt-4o-mini",
         response_model: QuestionAnswer,
         messages: [
           %{
@@ -398,7 +469,7 @@ defmodule InstructorTest do
 
     result =
       Instructor.chat_completion(
-        model: "gpt-3.5-turbo",
+        model: "gpt-4o-mini",
         max_retries: 1,
         response_model: %{field: :string},
         messages: [
@@ -416,7 +487,7 @@ defmodule InstructorTest do
 
     result =
       Instructor.chat_completion(
-        model: "gpt-3.5-turbo",
+        model: "gpt-4o-mini",
         max_retries: 3,
         response_model: %{field: :string},
         messages: [
@@ -435,7 +506,7 @@ defmodule InstructorTest do
 
       result =
         Instructor.chat_completion(
-          model: "gpt-3.5-turbo",
+          model: "gpt-4o-mini",
           mode: mode,
           response_model: %{name: :string},
           messages: [
@@ -457,7 +528,7 @@ defmodule InstructorTest do
 
       result =
         Instructor.chat_completion(
-          model: "gpt-3.5-turbo",
+          model: "gpt-4o-mini",
           mode: mode,
           stream: true,
           response_model: {:array, %{name: :string}},

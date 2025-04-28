@@ -1,4 +1,11 @@
 # Used by "mix format"
 [
-  inputs: ["{mix,.formatter}.exs", "{config,lib,test}/**/*.{ex,exs}"]
+  import_deps: [],
+  inputs: [
+    "{mix,.formatter}.exs",
+    "{config,lib,test}/**/*.{ex,exs}",
+    "pages/cookbook/**/*.{ex,exs}",
+    "examples/**/*.{ex,exs}",
+    "scripts/**/*.{ex,exs}"
+  ]
 ]

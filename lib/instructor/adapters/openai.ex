@@ -27,16 +27,8 @@ defmodule Instructor.Adapters.OpenAI do
     params =
       case params do
         # OpenAI's json_schema mode doesn't support format or pattern attributes
-        %{"response_format" => %{"json_schema" => %{"schema" => _schema}}} ->
-          update_in(params, [:response_format, :json_schema, :schema], fn schema ->
-            JSONSchema.traverse_and_update(schema, fn
-              %{"type" => _} = x when is_map_key(x, "format") or is_map_key(x, "pattern") ->
-                Map.drop(x, ["format", "pattern"])
-
-              x ->
-                x
-            end)
-          end)
+        %{response_format: %{json_schema: %{schema: _schema}}} ->
+          update_in(params, [:response_format, :json_schema, :schema], &normalize_json_schema/1)
 
         _ ->
           params
@@ -47,6 +39,21 @@ defmodule Instructor.Adapters.OpenAI do
     else
       do_chat_completion(mode, params, config)
     end
+  end
+
+  defp normalize_json_schema(schema) do
+    JSONSchema.traverse_and_update(schema, fn
+      %{"type" => _} = x when is_map_key(x, "format") or is_map_key(x, "pattern") ->
+        {format, x} = Map.pop(x, "format")
+        {pattern, x} = Map.pop(x, "pattern")
+
+        Map.update(x, "description", "", fn description ->
+          "#{description} (format: #{format}, pattern: #{pattern})"
+        end)
+
+      x ->
+        x
+    end)
   end
 
   @impl true
@@ -86,6 +93,7 @@ defmodule Instructor.Adapters.OpenAI do
   defp do_streaming_chat_completion(mode, params, config) do
     pid = self()
     options = http_options(config)
+    ref = make_ref()
 
     Stream.resource(
       fn ->
@@ -95,28 +103,28 @@ defmodule Instructor.Adapters.OpenAI do
               auth_header(config),
               json: params,
               into: fn {:data, data}, {req, resp} ->
-                send(pid, data)
+                send(pid, {ref, data})
                 {:cont, {req, resp}}
               end
             ])
 
           Req.post(url(config), options)
-          send(pid, :done)
+          send(pid, {ref, :done})
         end)
       end,
       fn task ->
         receive do
-          :done ->
+          {^ref, :done} ->
             {:halt, task}
 
-          data ->
+          {^ref, data} ->
             {[data], task}
         after
           15_000 ->
-            {:halt, task}
+            raise "Timeout waiting for LLM call to receive streaming data"
         end
       end,
-      fn task -> Task.await(task) end
+      fn _ -> nil end
     )
     |> SSEStreamParser.parse()
     |> Stream.map(fn chunk -> parse_stream_chunk_for_mode(mode, chunk) end)
@@ -180,10 +188,15 @@ defmodule Instructor.Adapters.OpenAI do
 
   defp parse_stream_chunk_for_mode(:tools, %{
          "choices" => [
-           %{"delta" => %{"content" => chunk}}
+           %{"delta" => delta}
          ]
-       }),
-       do: chunk
+       }) do
+    case delta do
+      nil -> ""
+      %{} -> ""
+      %{"content" => chunk} -> chunk
+    end
+  end
 
   defp parse_stream_chunk_for_mode(_, %{"choices" => [%{"finish_reason" => "stop"}]}), do: ""
 
@@ -214,6 +227,7 @@ defmodule Instructor.Adapters.OpenAI do
     default_config = [
       api_url: "https://api.openai.com",
       api_path: "/v1/chat/completions",
+      api_key: System.get_env("OPENAI_API_KEY"),
       auth_mode: :bearer,
       http_options: [receive_timeout: 60_000]
     ]

@@ -3,6 +3,8 @@ defmodule Instructor do
 
   alias Instructor.JSONSchema
 
+  @type stream :: Enumerable.t()
+
   @external_resource "README.md"
 
   [_, readme_docs, _] =
@@ -36,7 +38,7 @@ defmodule Instructor do
   ## Examples
 
       iex> Instructor.chat_completion(
-      ...>   model: "gpt-3.5-turbo",
+      ...>   model: "gpt-4o-mini",
       ...>   response_model: Instructor.Demos.SpamPrediction,
       ...>   messages: [
       ...>     %{
@@ -56,7 +58,7 @@ defmodule Instructor do
   Partial streaming will emit the record multiple times until it's complete.
 
       iex> Instructor.chat_completion(
-      ...>   model: "gpt-3.5-turbo",
+      ...>   model: "gpt-4o-mini",
       ...>   response_model: {:partial, %{name: :string, birth_date: :date}}
       ...>   messages: [
       ...>     %{
@@ -74,7 +76,7 @@ defmodule Instructor do
   and instructor will emit them one at a time as they arrive in complete form and validated.
 
       iex> Instructor.chat_completion(
-      ...>   model: "gpt-3.5-turbo",
+      ...>   model: "gpt-4o-mini",
       ...>   response_model: {:array, %{name: :string, birth_date: :date}}
       ...>   messages: [
       ...>     %{
@@ -94,7 +96,7 @@ defmodule Instructor do
   If there's a validation error, it will return an error tuple with the change set describing the errors.
 
       iex> Instructor.chat_completion(
-      ...>   model: "gpt-3.5-turbo",
+      ...>   model: "gpt-4o-mini",
       ...>   response_model: Instructor.Demos.SpamPrediction,
       ...>   messages: [
       ...>     %{
@@ -119,7 +121,7 @@ defmodule Instructor do
           {:ok, Ecto.Schema.t(), map() | nil}
           | {:error, Ecto.Changeset.t()}
           | {:error, String.t()}
-          | Stream.t()
+          | stream()
   def chat_completion(params, config \\ nil) do
     params =
       params
@@ -434,7 +436,7 @@ defmodule Instructor do
            {cast_all(model, params), raw_response},
          {%Ecto.Changeset{valid?: true} = changeset, _raw_response} <-
            {call_validate(response_model, changeset, validation_context), raw_response} do
-      {:ok, changeset |> Ecto.Changeset.apply_changes(), raw_response.body["usage"] || %{}}
+      {:ok, changeset |> Ecto.Changeset.apply_changes(), raw_response["usage"] || %{}}
     else
       {%Ecto.Changeset{} = changeset, raw_response} ->
         if max_retries > 0 do
@@ -537,10 +539,10 @@ defmodule Instructor do
             [sys_message | messages]
 
           :json_schema ->
-            messages
+            [sys_message | messages]
 
           :tools ->
-            messages
+            [sys_message | messages]
         end
       end)
 
@@ -605,6 +607,21 @@ defmodule Instructor do
     case config[:adapter] do
       nil -> Application.get_env(:instructor, :adapter, Instructor.Adapters.OpenAI)
       adapter -> adapter
+    end
+  end
+
+  defmacro __using__(_opts) do
+    quote do
+      use Instructor.Validator
+
+      Module.register_attribute(__MODULE__, :llm_doc, persist: true, accumulate: true)
+
+      def __llm_doc__ do
+        case __MODULE__.__info__(:attributes)[:llm_doc] do
+          [doc | _] -> doc
+          _ -> nil
+        end
+      end
     end
   end
 end

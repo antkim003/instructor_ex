@@ -23,7 +23,7 @@ defmodule Instructor.Validator do
     end
 
     iex> Instructor.chat_completion(
-    ...>   model: "gpt-3.5-turbo",
+    ...>   model: "gpt-4o-mini",
     ...>   response_model: Instructor.Demos.SpamPrediction,
     ...>   max_retries: 1,
     ...>   messages: [
@@ -46,7 +46,7 @@ defmodule Instructor.Validator do
     }}
   """
   @callback validate_changeset(Ecto.Changeset.t()) :: Ecto.Changeset.t()
-  @callback validate_changeset(Ecto.Changeset.t(), Map.t()) :: Ecto.Changeset.t()
+  @callback validate_changeset(Ecto.Changeset.t(), map()) :: Ecto.Changeset.t()
   @optional_callbacks [
     validate_changeset: 1,
     validate_changeset: 2
@@ -57,19 +57,6 @@ defmodule Instructor.Validator do
       @behaviour Instructor.Validator
 
       import Instructor.Validator
-    end
-  end
-
-  defmodule Validation do
-    use Ecto.Schema
-
-    @doc """
-    Validate if an attribute is correct and if not, return an error message
-    """
-    @primary_key false
-    embedded_schema do
-      field(:valid?, :boolean)
-      field(:reason, :string)
     end
   end
 
@@ -95,10 +82,24 @@ defmodule Instructor.Validator do
     end
   """
   def validate_with_llm(changeset, field, statement, opts \\ []) do
+    defmodule Validation do
+      use Ecto.Schema
+      use Instructor
+
+      @llm_doc """
+      Validate if an attribute is correct and if not, return an error message
+      """
+      @primary_key false
+      embedded_schema do
+        field(:valid?, :boolean)
+        field(:reason, :string)
+      end
+    end
+
     Ecto.Changeset.validate_change(changeset, field, fn field, value ->
       {:ok, response, _usage} =
         Instructor.chat_completion(
-          model: Keyword.get(opts, :model, "gpt-3.5-turbo"),
+          model: Keyword.get(opts, :model, "gpt-4o-mini"),
           temperature: Keyword.get(opts, :temperature, 0),
           response_model: Validation,
           messages: [
@@ -116,10 +117,10 @@ defmodule Instructor.Validator do
         )
 
       case response do
-        %Validation{valid?: true} ->
+        %{valid?: true} ->
           []
 
-        %Validation{reason: reason} ->
+        %{reason: reason} ->
           [
             {field, "is invalid, #{reason}"}
           ]

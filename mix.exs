@@ -28,12 +28,18 @@ defmodule Instructor.MixProject do
           "pages/philosophy.md",
           "pages/llm-providers/llama-cpp.livemd",
           "pages/llm-providers/ollama.livemd",
-          "pages/llm-providers/together.livemd",
+          "pages/llm-providers/vllm.livemd",
+          "pages/llm-providers/gemini.livemd",
+          "pages/llm-providers/anthropic.livemd",
+          "pages/llm-providers/groq.livemd",
+          "pages/llm-providers/azure-openai.md",
           "pages/cookbook/text-classification.livemd",
           "pages/cookbook/qa-citations.livemd",
           "pages/cookbook/extract-action-items-from-meeting-transcripts.livemd",
           "pages/cookbook/text-to-dataframes.livemd",
-          "pages/cookbook/gpt4-vision.livemd"
+          "pages/cookbook/gpt4o-vision.livemd",
+          "pages/cookbook/ocr-receipts-with-gpt4o.livemd",
+          "pages/cookbook/pii-data-sanitization.livemd"
         ],
         groups_for_extras: [
           "LLM Providers": ~r"pages/llm-providers/.*\.(md|livemd)",
@@ -116,7 +122,9 @@ defmodule Instructor.MixProject do
       {:req, "~> 0.5 or ~> 1.0"},
       {:jaxon, "~> 2.0"},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
-      {:mox, "~> 1.1.0", only: :test}
+      {:mox, "~> 1.1.0", only: :test},
+      {:phoenix, "~> 1.7", only: [:test, :dev]},
+      {:phoenix_live_view, "~> 0.20.17", only: [:test, :dev]}
     ]
   end
 end
