@@ -436,7 +436,7 @@ defmodule Instructor do
            {cast_all(model, params), raw_response},
          {%Ecto.Changeset{valid?: true} = changeset, _raw_response} <-
            {call_validate(response_model, changeset, validation_context), raw_response} do
-      {:ok, changeset |> Ecto.Changeset.apply_changes(), raw_response.body["usage"] || %{}}
+      {:ok, changeset |> Ecto.Changeset.apply_changes(), process_token(raw_response, config)}
     else
       {%Ecto.Changeset{} = changeset, raw_response} ->
         if max_retries > 0 do
@@ -584,6 +584,33 @@ defmodule Instructor do
           type: "function",
           function: %{name: "Schema"}
         })
+    end
+  end
+
+  defp process_token(response, config) do
+    adp = adapter(config)
+
+    case adp do
+      Instructor.Adapters.Gemini ->
+        usage_metadata = response.body["usageMetadata"]
+
+        %{
+          "prompt_tokens" => Map.get(usage_metadata, "promptTokenCount", nil),
+          "completion_tokens" => Map.get(usage_metadata, "candidatesTokenCount", nil),
+          "total_tokens" => Map.get(usage_metadata, "totalTokenCount", nil)
+        }
+
+      Instructor.Adapters.Anthropic ->
+        usage = response.body["usage"]
+
+        %{
+          "prompt_tokens" => Map.get(usage, "input_tokens", 0),
+          "completion_tokens" => Map.get(usage, "output_tokens", 0),
+          "total_tokens" => Map.get(usage, "input_tokens", 0) + Map.get(usage, "output_tokens", 0)
+        }
+
+      _ ->
+        response.body["usage"] || %{}
     end
   end
 
